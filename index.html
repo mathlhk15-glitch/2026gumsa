@@ -577,7 +577,8 @@ function cfg(){
     pw: saved.pw || "1234",
     school: saved.school || "창원경일고등학교",
     url: saved.url || "https://script.google.com/macros/s/AKfycbxV3ZeJmVMmbdLj8RmYcpPtNjef_OStA2S-y1udCIGHjtSTnR6BYyC4zUj7gJC_OFr2-w/exec",
-    apikey: saved.apikey || ""
+    apikey: saved.apikey || "",
+    classes: saved.classes != null ? saved.classes : 9   // ← 버그1 수정: classes 복원
   };
 }
 function saveCfg(c){ localStorage.setItem('cfg4j',JSON.stringify(c)) }
@@ -839,7 +840,8 @@ function updateStats(){
 function renderTable(){
   const q = document.getElementById('srch').value.toLowerCase();
   let filtered = selectedClass==='전체' ? cachedSubs : cachedSubs.filter(s=>s.classNum===selectedClass);
-  filtered = filtered.filter(s=>s.studentId.includes(q)||s.name.includes(q)||(s.classNum||'').includes(q));
+  // 버그3 수정: studentId가 숫자로 반환될 수 있으므로 문자열 변환
+  filtered = filtered.filter(s=>String(s.studentId).includes(q)||String(s.name).includes(q)||(String(s.classNum||'').includes(q)));
   const tbody = document.getElementById('t-body');
   const empty = document.getElementById('t-empty');
   if(filtered.length===0){ tbody.innerHTML=''; empty.style.display='block'; empty.textContent=cachedSubs.length?'검색 결과 없음':'제출된 데이터가 없습니다'; return; }
