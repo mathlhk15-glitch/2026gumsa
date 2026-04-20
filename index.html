@@ -1020,7 +1020,15 @@ ${base}
   try{
     // JSON 블록 추출: { 로 시작하는 부분부터 마지막 } 까지
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    const cleaned = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g,'').trim();
+    let cleaned = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g,'').trim();
+    // Bad control character 방지: JSON 문자열 값 안의 제어문자를 이스케이프
+    // \n \t \r 등이 JSON 문자열 안에 리터럴로 들어오면 파싱 실패하므로 제거
+    cleaned = cleaned.replace(/[\u0000-\u001F\u007F]/g, ch => {
+      if(ch==='\n') return '\\n';
+      if(ch==='\r') return '\\r';
+      if(ch==='\t') return '\\t';
+      return ''; // 나머지 제어문자 제거
+    });
     const parsed = JSON.parse(cleaned);
     if(parsed.student && parsed.teacher && parsed.record) return parsed;
     // 일부 키만 있어도 허용 (빈 문자열은 placeholder로 채움)
