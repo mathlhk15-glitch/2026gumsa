@@ -1014,7 +1014,28 @@ ${base}
 [응답 형식 - 이 JSON 구조를 그대로 채워서 반환]
 {"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지)\n\n【추천 진로 방향】\n(2~3가지)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어】\n(1가지)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
 
-  const raw = await callGemini(prompt, key);
+  // 축약 프롬프트 (MAX_TOKENS 발생 시 자동 재시도용)
+  const promptCompact = `너는 한국 고등학교 진로상담 전문 AI다. 순수 JSON만 응답하라. { 로 시작 } 로 끝. 코드블록 금지.
+
+[학생]
+${base}
+
+[JSON]
+{"student":"【한줄요약】\n(1문장)\n\n【핵심 강점】\n(2가지)\n\n【추천 진로】\n(2가지)\n\n【행동 3가지】\n1.\n2.\n3.","teacher":"【핵심요약】\n(1문장)\n\n【패턴 분석】\n(핵심만)\n\n【상담 질문】\n1.\n2.\n\n【지도 전략】\n(2가지)","record":"【세특 초안】\n(200자 이내)\n\n【상담 메모】\n(한 줄)"}`;
+
+  // 1차: 일반 프롬프트 시도
+  let raw;
+  try{
+    raw = await callGemini(prompt, key);
+  }catch(e){
+    if(e.message==='MAX_TOKENS'){
+      // 2차: 축약 프롬프트 자동 재시도
+      console.warn('[callGeminiOnce] MAX_TOKENS → 축약 프롬프트로 재시도');
+      raw = await callGemini(promptCompact, key);
+    } else {
+      throw e;
+    }
+  }
   try{
     // JSON 블록 추출: { 로 시작하는 부분부터 마지막 } 까지
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -1054,7 +1075,7 @@ async function callGemini(prompt, key){
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({
               contents:[{parts:[{text:prompt}]}],
-              generationConfig:{maxOutputTokens:3500,temperature:0.65}
+              generationConfig:{maxOutputTokens:4500,temperature:0.65}
             })
           }
         );
@@ -1096,7 +1117,8 @@ async function callGemini(prompt, key){
           break;
         }
         if(finishReason==='MAX_TOKENS'){
-          throw new Error(`[${model}] 응답이 중간에서 잘렸습니다. 더 짧게 다시 생성해 주세요.`);
+          // 축약 재시도 신호를 callGeminiOnce까지 전달
+          throw new Error(`MAX_TOKENS`);
         }
         const text = data.candidates?.[0]?.content?.parts
           ?.map(p => p.text || '')
