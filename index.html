@@ -1048,9 +1048,9 @@ ${base}
 }
 
 async function callGemini(prompt, key){
-  // 모델 우선순위: 2.5-flash-lite(빠름, 무료) → 2.5-flash(폴백)
+  // 모델 우선순위: 2.5-flash(품질) → 2.5-flash-lite(폴백)
   // gemini-2.0-flash 계열은 2026년 3월 6일부로 신규 API 키에서 사용 불가
-  const MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
   let lastErr;
   for(const model of MODELS){
     let skipModel = false;
