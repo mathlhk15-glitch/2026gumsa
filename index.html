@@ -1007,12 +1007,13 @@ async function callGeminiOnce(s, key){
   const prompt = `너는 한국 고등학교 진로상담 전문 AI다.
 아래 학생 검사 자료를 분석하여 반드시 아래 JSON 형식으로만 응답하라.
 응답 시작은 반드시 { 로 시작하고 } 로 끝나야 한다. 마크다운, 코드블록, 추가 설명 절대 금지.
+JSON 값(value)은 반드시 일반 텍스트 문자열로 작성하라. 값 안에 JSON 배열([])이나 객체({})를 절대 쓰지 말라.
 
 [학생 자료]
 ${base}
 
-[응답 형식 - 이 JSON 구조를 그대로 채워서 반환]
-{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지)\n\n【추천 진로 방향】\n(2~3가지)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어】\n(1가지)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
+[응답 형식 - student/teacher/record 세 키의 값을 텍스트로 채워서 반환]
+{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지를 줄글로)\n\n【추천 진로 방향】\n(2~3가지를 줄글로)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어】\n(1가지)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지를 줄글로)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
 
   // 1차: 일반 프롬프트 시도
   let raw;
@@ -1054,7 +1055,7 @@ async function callGemini(prompt, key){
   let lastErr;
   for(const model of MODELS){
     let skipModel = false;
-    for(let attempt=0; attempt<2; attempt++){
+    for(let attempt=0; attempt<1; attempt++){
       let res;
       try{
         const controller = new AbortController();
