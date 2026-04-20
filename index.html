@@ -461,7 +461,8 @@ tbody tr:hover{background:var(--g50);cursor:pointer}
 
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="btn btn-navy btn-sm" onclick="analyzeAll()">🤖 전체 일괄 AI 분석</button>
-    <button class="btn btn-teal btn-sm" onclick="printClassPDF()">🖨️ 현재 반 전체 PDF</button>
+    <button class="btn btn-teal btn-sm" onclick="printClassStudentPDF()">📘 반 전체 학생용 PDF</button>
+    <button class="btn btn-teal btn-sm" onclick="printClassTeacherPDF()">📊 반 전체 교사용 PDF</button>
     <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV 내보내기</button>
     <button class="btn btn-red btn-sm" onclick="clearAll()">🗑️ 초기화</button>
   </div>
@@ -922,7 +923,8 @@ function renderAI(ai, idx){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:700;color:var(--g900)">🤖 Gemini AI 분석 결과</div>
       <div style="display:flex;gap:7px;flex-wrap:wrap">
-        <button class="btn btn-outline btn-sm" onclick="printPDF()">🖨️ 이 학생 PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="printPDF()">📘 학생용 PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="printTeacherPDF()">📊 교사용 PDF</button>
         <button class="btn btn-ghost btn-sm" onclick="copyAIText('student')">📋 학생용 복사</button>
         <button class="btn btn-ghost btn-sm" onclick="copyAIText('record')">📝 세특 복사</button>
         <button class="btn btn-ghost btn-sm" onclick="reAnalyze()">🔄 재분석</button>
@@ -979,43 +981,49 @@ function co(){ document.getElementById('ov-detail').classList.remove('open'); cu
 // ══════════════════════════════════
 // Gemini AI 분석
 // ══════════════════════════════════
-async function generateAI(idx){
-  const s = cachedSubs[idx];
-  const c = cfg();
-  if(!c.apikey){ alert('Gemini API 키를 설정해 주세요 (⚙️ 설정)'); return; }
-  document.getElementById('ai-area').innerHTML =
-    `<div class="loading"><div class="spinner"></div>AI 분석 중... 잠시만 기다려 주세요</div>`;
-  try{
-    const ai = await callGeminiOnce(s, c.apikey);
-    const res = await fetch(c.url,{method:'POST',
-      body:JSON.stringify({action:'saveAnalysis',studentId:s.studentId,analysis:ai})});
-    const sj = await res.json().catch(()=>({}));
-    if(sj.success===false) throw new Error(sj.error||'저장 실패');
-    cachedSubs[idx].aiAnalysis = ai;
-    updateStats(); renderTable();
-    document.getElementById('ai-area').outerHTML = renderAI(ai, idx);
-  }catch(err){
-    document.getElementById('ai-area').innerHTML =
-      `<div class="notice err">❌ 분석 실패: ${err.message}<br>
-      <button class="btn btn-navy btn-sm" style="margin-top:8px" onclick="generateAI(${idx})">다시 시도</button></div>`;
-  }
-}
+// ══════════════════════════════════
+// 통합 1회 AI 호출 (학생용+교사용+세특)
+// ══════════════════════════════════
+async function callGeminiOnce(s, key){
+  const d = s.data||{};
+  const topApt = [...(d.aptitude?.scores||[])].filter(sc=>sc.level||sc.score)
+    .sort((a,b)=>(+b.score||0)-(+a.score||0)).slice(0,3)
+    .map(sc=>`${sc.name} ${sc.score||'?'}점 ${sc.level||''}`.trim()).join(', ')||'미입력';
+  const lowApt = [...(d.aptitude?.scores||[])].filter(sc=>sc.level||sc.score)
+    .sort((a,b)=>(+a.score||999)-(+b.score||999)).slice(0,2)
+    .map(sc=>`${sc.name} ${sc.score||'?'}점 ${sc.level||''}`.trim()).join(', ')||'미입력';
+  const topInterest = [...(d.interest?.types||[])].filter(h=>h.t||h.lv)
+    .sort((a,b)=>(+b.t||0)-(+a.t||0)).slice(0,2)
+    .map(h=>`${h.code}(${h.name}) T${h.t||'?'} ${h.lv||''}`.trim()).join(', ')||'미입력';
+  const base = `학생: ${s.name} / 학번 ${s.studentId}
+희망학과: ${d.personality?.dept||'미기재'} / 희망직업: ${d.personality?.job||'미기재'}
+상위 적성: ${topApt} / 보완 적성: ${lowApt}
+흥미코드: ${d.interest?.code1||'?'}-${d.interest?.code2||'?'} / 상위 흥미: ${topInterest}
+인성: 외향성 ${d.personality?.ext||'?'}, 성실성 ${d.personality?.con||'?'}, 개방성 ${d.personality?.ope||'?'}, 정서안정 ${d.personality?.neu||'?'}
+학교생활: 적응 ${d.personality?.sadp||'?'}, 급우관계 ${d.personality?.peer||'?'}, 학업수준 ${d.personality?.grade||'?'}, 좋아하는과목 ${d.personality?.fav||'미기재'}
+진로성숙도: ${d.career?.cm?.lv||'?'}(T${d.career?.cm?.t||'?'}) / 진로결정: ${d.career?.cd?.lv||'?'}(${d.career?.cd?.sc||'?'})
+학생소감: ${d.career?.thought||'없음'} / 노력계획: ${d.career?.plan||'없음'}`;
 
-async function reAnalyze(){
-  if(curIdx===null) return;
-  const s = cachedSubs[curIdx];
-  const c = cfg();
-  if(!c.apikey){ alert('Gemini API 키를 설정해 주세요.'); return; }
-  if(!confirm(`${s.name} 학생을 재분석합니까?`)) return;
-  document.getElementById('ov-body').innerHTML +=
-    '<div class="loading" style="margin-top:8px"><div class="spinner"></div>재분석 중...</div>';
+  const prompt = `너는 한국 고등학교 진로상담 전문 AI다.
+아래 학생 검사 자료를 바탕으로 3가지 결과물을 작성하라.
+반드시 순수 JSON만 응답하라. 마크다운 코드블록 절대 금지.
+
+[학생 자료]
+${base}
+
+[출력 JSON]
+{"student":"학생용리포트(700자이내):\\n【한줄요약】\\n...\\n\\n【핵심 강점】\\n...\\n\\n【추천 진로 방향】\\n...\\n\\n【지금 할 행동 3가지】\\n1....\\n2....\\n3....\\n\\n【상담 질문 2가지】\\n1....\\n2....\\n\\n【세특으로 연결되는 탐구 아이디어】\\n...","teacher":"교사용메모(800자이내):\\n【핵심요약】\\n...\\n\\n【검사 패턴 분석】\\n...\\n\\n【진로 준비도 해석】\\n...\\n\\n【상담 질문 3개】\\n1....\\n2....\\n3....\\n\\n【지도 전략 3개】\\n1....\\n2....\\n3....\\n\\n【세특 작성 포인트】\\n...","record":"세특초안(500자이내):\\n【진로 세특 초안】\\n...\\n\\n【상담 메모용 한줄 포인트】\\n..."}`;
+
+  const raw = await callGemini(prompt, key);
   try{
-    const ai = await callGeminiOnce(s, c.apikey);
-    await fetch(c.url,{method:'POST',
-      body:JSON.stringify({action:'saveAnalysis',studentId:s.studentId,analysis:ai})});
-    cachedSubs[curIdx].aiAnalysis = ai;
-    updateStats(); renderTable(); openDetail(curIdx);
-  }catch(err){ alert('재분석 실패: '+err.message); }
+    const cleaned = raw.replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(cleaned);
+    if(parsed.student && parsed.teacher && parsed.record) return parsed;
+    throw new Error('구조 불완전');
+  }catch(err){
+    console.warn('JSON 파싱 실패:', err.message);
+    return {student:raw, teacher:'(재분석 필요)', record:'(재분석 필요)'};
+  }
 }
 
 async function callGemini(prompt, key){
@@ -1099,6 +1107,45 @@ async function callGemini(prompt, key){
 // ══════════════════════════════════
 // 전체 일괄 분석
 // ══════════════════════════════════
+async function generateAI(idx){
+  const s = cachedSubs[idx];
+  const c = cfg();
+  if(!c.apikey){ alert('Gemini API 키를 설정해 주세요 (⚙️ 설정)'); return; }
+  document.getElementById('ai-area').innerHTML =
+    `<div class="loading"><div class="spinner"></div>AI 분석 중... 잠시만 기다려 주세요</div>`;
+  try{
+    const ai = await callGeminiOnce(s, c.apikey);
+    const res = await fetch(c.url,{method:'POST',
+      body:JSON.stringify({action:'saveAnalysis',studentId:s.studentId,analysis:ai})});
+    const sj = await res.json().catch(()=>({}));
+    if(sj.success===false) throw new Error(sj.error||'저장 실패');
+    cachedSubs[idx].aiAnalysis = ai;
+    updateStats(); renderTable();
+    document.getElementById('ai-area').outerHTML = renderAI(ai, idx);
+  }catch(err){
+    document.getElementById('ai-area').innerHTML =
+      `<div class="notice err">❌ 분석 실패: ${err.message}<br>
+      <button class="btn btn-navy btn-sm" style="margin-top:8px" onclick="generateAI(${idx})">다시 시도</button></div>`;
+  }
+}
+
+async function reAnalyze(){
+  if(curIdx===null) return;
+  const s = cachedSubs[curIdx];
+  const c = cfg();
+  if(!c.apikey){ alert('Gemini API 키를 설정해 주세요.'); return; }
+  if(!confirm(`${s.name} 학생을 재분석합니까?`)) return;
+  document.getElementById('ov-body').innerHTML +=
+    '<div class="loading" style="margin-top:8px"><div class="spinner"></div>재분석 중...</div>';
+  try{
+    const ai = await callGeminiOnce(s, c.apikey);
+    await fetch(c.url,{method:'POST',
+      body:JSON.stringify({action:'saveAnalysis',studentId:s.studentId,analysis:ai})});
+    cachedSubs[curIdx].aiAnalysis = ai;
+    updateStats(); renderTable(); openDetail(curIdx);
+  }catch(err){ alert('재분석 실패: '+err.message); }
+}
+
 async function analyzeAll(){
   const c = cfg();
   if(!c.apikey){ alert('Gemini API 키를 설정해 주세요.'); return; }
@@ -1137,8 +1184,30 @@ async function analyzeAll(){
 }
 
 // ══════════════════════════════════
+// 개별 학생 삭제
+// ══════════════════════════════════
+async function deleteStudent(idx){
+  if(idx===null||idx===undefined) return;
+  const s = cachedSubs[idx];
+  if(!s) return;
+  if(!confirm(`[${s.classNum}] ${s.name} (${s.studentId})\n\n이 학생의 데이터를 삭제할까요?`)) return;
+  const c = cfg();
+  if(!c.url){ alert('Apps Script URL이 설정되지 않았습니다.'); return; }
+  try{
+    const res = await fetch(c.url,{method:'POST',
+      body:JSON.stringify({action:'deleteOne',studentId:s.studentId})});
+    const json = await res.json().catch(()=>({}));
+    if(json.success===false) throw new Error(json.error||'삭제 실패');
+    cachedSubs.splice(idx,1);
+    co(); buildClassTabs(); updateStats(); renderTable();
+    alert(`${s.name} 학생 데이터가 삭제되었습니다.`);
+  }catch(err){ alert('삭제 오류: '+err.message); }
+}
+
+// ══════════════════════════════════
 // PDF 인쇄
 // ══════════════════════════════════
+// 학생용 블록 (학생용 리포트만)
 function buildStudentBlock(s){
   if(!s.aiAnalysis) return '';
   const dt = new Date(s.submittedAt).toLocaleDateString('ko-KR');
@@ -1147,7 +1216,24 @@ function buildStudentBlock(s){
   return `
     <div class="stu-block">
       <div class="ph">
-        <div class="ph-t">📊 진로 AI 분석 리포트</div>
+        <div class="ph-t">📘 진로 AI 리포트 — 학생용</div>
+        <div class="ph-m">학번: ${s.studentId} | 이름: ${s.name} | ${s.classNum||''}<br>제출일: ${dt} | 생성: ${now}</div>
+      </div>
+      <div class="ps2"><div class="ps2-t">📘 나의 진로 리포트</div><div class="ps2-b">${s.aiAnalysis.student||''}</div></div>
+      <div class="pf">본 리포트는 AI 분석 보조 도구로 생성되었습니다. | ${school} 진로진학상담실</div>
+    </div>`;
+}
+
+// 교사용 블록 (학생용+교사용+세특 전체)
+function buildTeacherBlock(s){
+  if(!s.aiAnalysis) return '';
+  const dt = new Date(s.submittedAt).toLocaleDateString('ko-KR');
+  const now = new Date().toLocaleDateString('ko-KR');
+  const school = cfg().school || '창원경일고등학교';
+  return `
+    <div class="stu-block">
+      <div class="ph">
+        <div class="ph-t">📊 진로 AI 분석 리포트 — 교사용</div>
         <div class="ph-m">학번: ${s.studentId} | 이름: ${s.name} | ${s.classNum||''}<br>제출일: ${dt} | 생성: ${now}</div>
       </div>
       <div class="ps2"><div class="ps2-t">📘 학생용 진로 리포트</div><div class="ps2-b">${s.aiAnalysis.student||''}</div></div>
@@ -1159,7 +1245,7 @@ function buildStudentBlock(s){
     </div>`;
 }
 
-// 개별 학생 PDF
+// 개별 학생 PDF — 학생용
 function printPDF(){
   if(curIdx===null) return;
   const s = cachedSubs[curIdx];
@@ -1170,18 +1256,47 @@ function printPDF(){
   document.getElementById('pz').style.display = 'none';
 }
 
-// 현재 반(또는 전체) PDF 일괄 출력
-function printClassPDF(){
+// 개별 학생 PDF — 교사용
+function printTeacherPDF(){
+  if(curIdx===null) return;
+  const s = cachedSubs[curIdx];
+  if(!s.aiAnalysis){ alert('AI 분석이 필요합니다.'); return; }
+  document.getElementById('pz-body').innerHTML = buildTeacherBlock(s);
+  document.getElementById('pz').style.display = 'block';
+  window.print();
+  document.getElementById('pz').style.display = 'none';
+}
+
+// 현재 반 전체 PDF — 학생용 (학생용 리포트만)
+function printClassStudentPDF(){
   const scope = selectedClass==='전체' ? cachedSubs : cachedSubs.filter(s=>s.classNum===selectedClass);
   const analyzed = scope.filter(s=>s.aiAnalysis);
   if(analyzed.length===0){ alert('AI 분석이 완료된 학생이 없습니다.'); return; }
   const label = selectedClass==='전체' ? '전체' : selectedClass;
-  if(!confirm(`${label} AI 분석 완료 학생 ${analyzed.length}명의 리포트를 인쇄합니다.`)) return;
+  if(!confirm(`[학생용] ${label} ${analyzed.length}명 PDF를 출력합니다.
+학생용 리포트만 포함됩니다.`)) return;
   document.getElementById('pz-body').innerHTML = analyzed.map(buildStudentBlock).join('');
   document.getElementById('pz').style.display = 'block';
   window.print();
   document.getElementById('pz').style.display = 'none';
 }
+
+// 현재 반 전체 PDF — 교사용 (학생용+교사용+세특 전체)
+function printClassTeacherPDF(){
+  const scope = selectedClass==='전체' ? cachedSubs : cachedSubs.filter(s=>s.classNum===selectedClass);
+  const analyzed = scope.filter(s=>s.aiAnalysis);
+  if(analyzed.length===0){ alert('AI 분석이 완료된 학생이 없습니다.'); return; }
+  const label = selectedClass==='전체' ? '전체' : selectedClass;
+  if(!confirm(`[교사용] ${label} ${analyzed.length}명 PDF를 출력합니다.
+학생용+교사용+세특 초안 전체 포함됩니다.`)) return;
+  document.getElementById('pz-body').innerHTML = analyzed.map(buildTeacherBlock).join('');
+  document.getElementById('pz').style.display = 'block';
+  window.print();
+  document.getElementById('pz').style.display = 'none';
+}
+
+// 하위 호환성 유지
+function printClassPDF(){ printClassTeacherPDF(); }
 
 // ══════════════════════════════════
 // CSV 내보내기
@@ -1205,27 +1320,6 @@ function exportCSV(){
   const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=fname+'_'+new Date().toLocaleDateString('ko-KR')+'.csv'; a.click();
-}
-
-// ══════════════════════════════════
-// 개별 학생 삭제
-// ══════════════════════════════════
-async function deleteStudent(idx){
-  if(idx===null||idx===undefined) return;
-  const s = cachedSubs[idx];
-  if(!s) return;
-  if(!confirm(`[${s.classNum}] ${s.name} (${s.studentId})\n\n이 학생의 데이터를 삭제할까요?`)) return;
-  const c = cfg();
-  if(!c.url){ alert('Apps Script URL이 설정되지 않았습니다.'); return; }
-  try{
-    const res = await fetch(c.url,{method:'POST',
-      body:JSON.stringify({action:'deleteOne',studentId:s.studentId})});
-    const json = await res.json().catch(()=>({}));
-    if(json.success===false) throw new Error(json.error||'삭제 실패');
-    cachedSubs.splice(idx,1);
-    co(); buildClassTabs(); updateStats(); renderTable();
-    alert(`${s.name} 학생 데이터가 삭제되었습니다.`);
-  }catch(err){ alert('삭제 오류: '+err.message); }
 }
 
 // ══════════════════════════════════
