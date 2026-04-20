@@ -1005,31 +1005,42 @@ async function callGeminiOnce(s, key){
 학생소감: ${d.career?.thought||'없음'} / 노력계획: ${d.career?.plan||'없음'}`;
 
   const prompt = `너는 한국 고등학교 진로상담 전문 AI다.
-아래 학생 검사 자료를 바탕으로 3가지 결과물을 작성하라.
-반드시 순수 JSON만 응답하라. 마크다운 코드블록 절대 금지.
+아래 학생 검사 자료를 분석하여 반드시 아래 JSON 형식으로만 응답하라.
+응답 시작은 반드시 { 로 시작하고 } 로 끝나야 한다. 마크다운, 코드블록, 추가 설명 절대 금지.
 
 [학생 자료]
 ${base}
 
-[출력 JSON]
-{"student":"학생용리포트(700자이내):\\n【한줄요약】\\n...\\n\\n【핵심 강점】\\n...\\n\\n【추천 진로 방향】\\n...\\n\\n【지금 할 행동 3가지】\\n1....\\n2....\\n3....\\n\\n【상담 질문 2가지】\\n1....\\n2....\\n\\n【세특으로 연결되는 탐구 아이디어】\\n...","teacher":"교사용메모(800자이내):\\n【핵심요약】\\n...\\n\\n【검사 패턴 분석】\\n...\\n\\n【진로 준비도 해석】\\n...\\n\\n【상담 질문 3개】\\n1....\\n2....\\n3....\\n\\n【지도 전략 3개】\\n1....\\n2....\\n3....\\n\\n【세특 작성 포인트】\\n...","record":"세특초안(500자이내):\\n【진로 세특 초안】\\n...\\n\\n【상담 메모용 한줄 포인트】\\n..."}`;
+[응답 형식 - 이 JSON 구조를 그대로 채워서 반환]
+{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지)\n\n【추천 진로 방향】\n(2~3가지)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어】\n(1가지)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
 
   const raw = await callGemini(prompt, key);
   try{
-    const cleaned = raw.replace(/```json|```/g,'').trim();
+    // JSON 블록 추출: { 로 시작하는 부분부터 마지막 } 까지
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const cleaned = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g,'').trim();
     const parsed = JSON.parse(cleaned);
     if(parsed.student && parsed.teacher && parsed.record) return parsed;
-    throw new Error('구조 불완전');
+    // 일부 키만 있어도 허용 (빈 문자열은 placeholder로 채움)
+    if(parsed.student || parsed.teacher || parsed.record){
+      return {
+        student: parsed.student || '(학생 리포트 생성 실패 - 재분석 필요)',
+        teacher: parsed.teacher || '(교사 메모 생성 실패 - 재분석 필요)',
+        record:  parsed.record  || '(세특 초안 생성 실패 - 재분석 필요)'
+      };
+    }
+    throw new Error('JSON 키 누락 (student/teacher/record 없음)');
   }catch(err){
-    console.warn('JSON 파싱 실패:', err.message);
-    return {student:raw, teacher:'(재분석 필요)', record:'(재분석 필요)'};
+    console.warn('JSON 파싱 실패:', err.message, '\n원본 응답:', raw.slice(0,200));
+    // 완전 실패 시 에러를 던져서 재시도 유도
+    throw new Error('AI 응답 파싱 실패 - 다시 시도해 주세요 (' + err.message + ')');
   }
 }
 
 async function callGemini(prompt, key){
-  // 모델 우선순위: 2.5-flash → 2.0-flash → 2.0-flash-lite → 1.5-flash
-  // (gemini-1.5-pro는 v1beta API에서 더 이상 지원되지 않아 제거됨)
-  const MODELS = ['gemini-2.5-flash', 'gemini-flash-latest'];
+  // 모델 우선순위: 2.0-flash(안정) → 1.5-flash(폴백)
+  // gemini-2.5-flash는 thinking 모드로 응답이 매우 느리고 JSON 파싱도 불안정하여 제외
+  const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastErr;
   for(const model of MODELS){
     let skipModel = false;
@@ -1043,7 +1054,7 @@ async function callGemini(prompt, key){
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({
               contents:[{parts:[{text:prompt}]}],
-              generationConfig:{maxOutputTokens:2200,temperature:0.7}
+              generationConfig:{maxOutputTokens:3500,temperature:0.65}
             })
           }
         );
