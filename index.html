@@ -1059,9 +1059,10 @@ ${base}
 }
 
 async function callGemini(prompt, key){
-  // 모델 우선순위: 2.0-flash(안정) → 1.5-flash(폴백)
+  // 모델 우선순위: 2.0-flash(안정) → 2.0-flash-lite(폴백)
   // gemini-2.5-flash는 thinking 모드로 응답이 매우 느리고 JSON 파싱도 불안정하여 제외
-  const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  // gemini-1.5-flash는 v1beta API에서 더 이상 지원되지 않아 제외
+  const MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite'];
   let lastErr;
   for(const model of MODELS){
     let skipModel = false;
