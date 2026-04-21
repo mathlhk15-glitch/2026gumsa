@@ -364,6 +364,10 @@ tbody tr:hover{background:var(--g50);cursor:pointer}
       </div>
       <div class="fg"><label class="fl">흥미에 적합한 추천 직업</label>
         <textarea id="h-jobs" placeholder="검사지에 표시된 추천 직업들을 입력하세요"></textarea></div>
+      <div style="margin-top:14px">
+        <label class="fl">기초흥미 분야별 수준 <span style="font-size:10px;color:var(--g400);font-weight:400">(검사지의 14개 분야 수준을 선택하세요)</span></label>
+        <div id="bi-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px"></div>
+      </div>
       <div class="nav">
         <button class="btn btn-ghost" onclick="goStep(2)">← 이전</button>
         <button class="btn btn-navy" onclick="goStep(4)">다음 →</button>
@@ -461,6 +465,7 @@ tbody tr:hover{background:var(--g50);cursor:pointer}
 
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="btn btn-navy btn-sm" onclick="analyzeAll()">🤖 전체 일괄 AI 분석</button>
+    <button class="btn btn-outline btn-sm" onclick="reAnalyzeAll()">🔄 전체 일괄 AI 재분석</button>
     <button class="btn btn-teal btn-sm" onclick="printClassStudentPDF()">📘 반 전체 학생용 PDF</button>
     <button class="btn btn-teal btn-sm" onclick="printClassTeacherPDF()">📊 반 전체 교사용 PDF</button>
     <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV 내보내기</button>
@@ -477,7 +482,7 @@ tbody tr:hover{background:var(--g50);cursor:pointer}
         <thead><tr>
           <th>반</th><th>학번</th><th>이름</th><th>제출 일시</th>
           <th>적성</th><th>인성</th><th>흥미</th><th>진로</th>
-          <th>AI</th><th style="text-align:center">상세</th>
+          <th>AI</th><th title="저동기/재검사 필요 플래그">⚠️</th><th style="text-align:center">상세</th>
         </tr></thead>
         <tbody id="t-body"></tbody>
       </table>
@@ -562,6 +567,13 @@ const CM_SUBS = ['계획성','독립성','일에 대한 태도','자기이해','
 const CD_SUBS = ['진로유연성','진로개방성','심리적독립','자기이해 부족','직업정보 부족','자기갈등','관계갈등','환경갈등'];
 const LV_SEL = `<option value="">수준</option>${LEVELS5.map(l=>`<option>${l}</option>`).join('')}`;
 const HO_LV_SEL = `<option value="">수준</option>${LEVELS.map(l=>`<option>${l}</option>`).join('')}`;
+const BASIC_INTERESTS = [
+  '농림·어업·환경','공학·기계·기술','건설·건축','정보통신',
+  '생명과학·의료','사회·복지·서비스','교육·훈련','법률·경찰·군사',
+  '예술·음악·공예','영업·판매','경영·관리·사무','음식·조리·제과',
+  '스포츠·레저','방송·언론·광고'
+];
+const BI_LV_SEL = `<option value="">수준</option>${LEVELS.map(l=>`<option>${l}</option>`).join('')}`;
 
 let curStep = 0;
 let curIdx = null;
@@ -589,6 +601,7 @@ function saveCfg(c){ localStorage.setItem('cfg4j',JSON.stringify(c)) }
 window.onload = function(){
   buildAblRows();
   buildHoGrid();
+  buildBasicInterests();
   buildCMSubs();
   buildCDSubs();
   buildClassSelector();
@@ -628,6 +641,16 @@ function buildHoGrid(){
         <div><div style="font-size:10px;color:var(--g500);margin-bottom:2px">흥미수준</div>
           <select id="ho-lv-${h.c}" style="font-size:11px;padding:5px 6px">${HO_LV_SEL}</select></div>
       </div>
+    </div>`).join('');
+}
+
+function buildBasicInterests(){
+  const el = document.getElementById('bi-grid');
+  if(!el) return;
+  el.innerHTML = BASIC_INTERESTS.map((n,i)=>`
+    <div style="background:var(--g50);border:1px solid var(--g200);border-radius:7px;padding:7px 9px;display:flex;align-items:center;justify-content:space-between;gap:6px">
+      <span style="font-size:11px;font-weight:500;color:var(--g700);flex:1">${n}</span>
+      <select id="bi-${i}" style="font-size:11px;padding:4px 5px;width:76px">${BI_LV_SEL}</select>
     </div>`).join('');
 }
 
@@ -696,7 +719,8 @@ function collect(){
     interest:{
       code1:v('hc1'),code2:v('hc2'),
       types:HO_TYPES.map(h=>({code:h.c,name:h.n,t:v('ho-t-'+h.c),lv:v('ho-lv-'+h.c)})),
-      hi:v('h-hi'),lo:v('h-lo'),jobs:v('h-jobs')
+      hi:v('h-hi'),lo:v('h-lo'),jobs:v('h-jobs'),
+      basic:BASIC_INTERESTS.map((n,i)=>({name:n,lv:v('bi-'+i)}))
     },
     career:{
       cm:{t:v('cm-t'),lv:v('cm-lv'),subs:CM_SUBS.map((_,i)=>({name:CM_SUBS[i],sc:v('cm-sc-'+i),lv:v('cm-lv-'+i)}))},
@@ -851,16 +875,26 @@ function renderTable(){
     const d = s.data||{};
     const dt = new Date(s.submittedAt).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     const idx = cachedSubs.indexOf(s);
-    return `<tr onclick="openDetail(${idx})">
+    // 저동기 플래그: Holland T점수 평균 < 40 또는 4개 이상 항목이 하/최하
+    const hoTypes = d.interest?.types||[];
+    const hoScores = hoTypes.map(h=>+h.t||0).filter(t=>t>0);
+    const hoAvg = hoScores.length ? hoScores.reduce((a,b)=>a+b,0)/hoScores.length : 0;
+    const lowLvCount = hoTypes.filter(h=>h.lv==='하'||h.lv==='최하').length;
+    const isLowMotiv = (hoAvg>0 && hoAvg<40) || lowLvCount>=4;
+    const flagCell = isLowMotiv
+      ? `<td title="저동기/재검사 필요"><span style="color:#dc2626;font-size:14px" title="전반적 점수 낮음 - 상담 전 동기확인 필요">⚠️</span></td>`
+      : `<td style="color:var(--g300);font-size:12px">-</td>`;
+    return `<tr onclick="openDetail(${idx})" style="${isLowMotiv?'background:#fff5f5;':''}">
       <td><span class="bdg bdg-b">${s.classNum||'-'}</span></td>
       <td style="font-weight:600">${s.studentId}</td>
-      <td>${s.name}</td>
+      <td>${s.name}${isLowMotiv?'<span style="font-size:10px;color:#dc2626;margin-left:4px">⚠️</span>':''}</td>
       <td style="color:var(--g500);font-size:11px">${dt}</td>
       <td>${dot(d.aptitude?.jobs?.length>0)}</td>
       <td>${dot(!!d.personality?.con)}</td>
       <td>${dot(!!d.interest?.code1)}</td>
       <td>${dot(!!d.career?.cm?.lv)}</td>
       <td>${s.aiAnalysis?`<span class="bdg bdg-g">완료</span>`:`<span class="bdg bdg-a">대기</span>`}</td>
+      ${flagCell}
       <td style="text-align:center;white-space:nowrap">
         <button class="btn btn-navy btn-sm" onclick="event.stopPropagation();openDetail(${idx})">상세</button>
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;margin-left:4px;" onclick="event.stopPropagation();deleteStudent(${idx})">🗑️</button>
@@ -986,53 +1020,111 @@ function co(){ document.getElementById('ov-detail').classList.remove('open'); cu
 // ══════════════════════════════════
 async function callGeminiOnce(s, key){
   const d = s.data||{};
-  const topApt = [...(d.aptitude?.scores||[])].filter(sc=>sc.level||sc.score)
-    .sort((a,b)=>(+b.score||0)-(+a.score||0)).slice(0,3)
-    .map(sc=>`${sc.name} ${sc.score||'?'}점 ${sc.level||''}`.trim()).join(', ')||'미입력';
-  const lowApt = [...(d.aptitude?.scores||[])].filter(sc=>sc.level||sc.score)
-    .sort((a,b)=>(+a.score||999)-(+b.score||999)).slice(0,2)
-    .map(sc=>`${sc.name} ${sc.score||'?'}점 ${sc.level||''}`.trim()).join(', ')||'미입력';
-  const topInterest = [...(d.interest?.types||[])].filter(h=>h.t||h.lv)
-    .sort((a,b)=>(+b.t||0)-(+a.t||0)).slice(0,2)
-    .map(h=>`${h.code}(${h.name}) T${h.t||'?'} ${h.lv||''}`.trim()).join(', ')||'미입력';
-  const base = `학생: ${s.name} / 학번 ${s.studentId}
+
+  // ── 데이터 가공 ──
+  const hoTypes = d.interest?.types||[];
+  const hoScores = hoTypes.map(h=>+h.t||0).filter(t=>t>0);
+  const hoAvg = hoScores.length ? (hoScores.reduce((a,b)=>a+b,0)/hoScores.length).toFixed(1) : 0;
+  const hoMax = hoScores.length ? Math.max(...hoScores) : 0;
+  const hoMin = hoScores.length ? Math.min(...hoScores) : 0;
+  const hoRange = hoMax - hoMin;
+  // 분산 패턴: range>20=고분산(광범위형), range<10=저분산(집중형 or 저동기)
+  const dispersePattern = hoRange>=20 ? '고분산(광범위형)' : hoRange>=10 ? '중간분산' : hoScores.length>0 ? '저분산(집중형 또는 저동기)' : '미측정';
+  // 저동기 플래그
+  const lowLvCount = hoTypes.filter(h=>h.lv==='하'||h.lv==='최하').length;
+  const isLowMotiv = (hoAvg>0 && hoAvg<40) || lowLvCount>=4;
+
+  // 적성 상위/하위
+  const aptScores = [...(d.aptitude?.scores||[])].filter(sc=>sc.level||sc.score);
+  const topApt = [...aptScores].sort((a,b)=>(+b.score||0)-(+a.score||0)).slice(0,3)
+    .map(sc=>`${sc.name}(${sc.level||sc.score+'점'})`).join(', ')||'미입력';
+  const lowApt = [...aptScores].sort((a,b)=>(+a.score||999)-(+b.score||999)).slice(0,2)
+    .map(sc=>`${sc.name}(${sc.level||sc.score+'점'})`).join(', ')||'미입력';
+
+  // Holland 전체 수치
+  const hoDetail = hoTypes.filter(h=>h.t).map(h=>`${h.code}(${h.name})T${h.t} ${h.lv||''}`).join(', ')||'미입력';
+
+  // 기초흥미 14개 - 수준 입력된 것만
+  const basicFilled = (d.interest?.basic||[]).filter(b=>b.lv);
+  const basicTop = basicFilled.filter(b=>b.lv==='최상'||b.lv==='상').map(b=>b.name).join(', ')||'(미입력)';
+  const basicMid = basicFilled.filter(b=>b.lv==='중상').map(b=>b.name).join(', ')||'';
+  const basicLow = basicFilled.filter(b=>b.lv==='하'||b.lv==='최하').map(b=>b.name).join(', ')||'';
+
+  // 4종 교차 패턴
+  const aptTopName = aptScores.length ? [...aptScores].sort((a,b)=>(+b.score||0)-(+a.score||0))[0]?.name : '';
+  const hoTopCode = hoTypes.length ? [...hoTypes].sort((a,b)=>(+b.t||0)-(+a.t||0))[0]?.name : '';
+  const conLevel = d.personality?.con||'?';
+  const matLevel = d.career?.cm?.lv||'?';
+
+  const base = `학생: ${s.name} / 학번: ${s.studentId} / ${s.classNum||''}
 희망학과: ${d.personality?.dept||'미기재'} / 희망직업: ${d.personality?.job||'미기재'}
-상위 적성: ${topApt} / 보완 적성: ${lowApt}
-흥미코드: ${d.interest?.code1||'?'}-${d.interest?.code2||'?'} / 상위 흥미: ${topInterest}
-인성: 외향성 ${d.personality?.ext||'?'}, 성실성 ${d.personality?.con||'?'}, 개방성 ${d.personality?.ope||'?'}, 정서안정 ${d.personality?.neu||'?'}
-학교생활: 적응 ${d.personality?.sadp||'?'}, 급우관계 ${d.personality?.peer||'?'}, 학업수준 ${d.personality?.grade||'?'}, 좋아하는과목 ${d.personality?.fav||'미기재'}
-진로성숙도: ${d.career?.cm?.lv||'?'}(T${d.career?.cm?.t||'?'}) / 진로결정: ${d.career?.cd?.lv||'?'}(${d.career?.cd?.sc||'?'})
-학생소감: ${d.career?.thought||'없음'} / 노력계획: ${d.career?.plan||'없음'}`;
+
+[적성검사]
+상위 적성: ${topApt}
+보완 적성: ${lowApt}
+추천직업(적성): ${(d.aptitude?.jobs||[]).join(', ')||'미입력'}
+
+[인성검사]
+외향성: ${d.personality?.ext||'?'} / 성실성: ${d.personality?.con||'?'} / 개방성: ${d.personality?.ope||'?'} / 정서안정: ${d.personality?.neu||'?'}
+학교적응: ${d.personality?.sadp||'?'} / 급우관계: ${d.personality?.peer||'?'} / 학업수준: ${d.personality?.grade||'?'}
+좋아하는 과목: ${d.personality?.fav||'미기재'}
+
+[흥미검사]
+흥미코드: ${d.interest?.code1||'?'}-${d.interest?.code2||'?'}
+Holland T점수: ${hoDetail}
+T점수 평균: ${hoAvg} / 범위: ${hoMin}~${hoMax} / 분산패턴: ${dispersePattern}
+기초흥미 높음: ${basicTop}${basicMid?` / 중간: ${basicMid}`:''}${basicLow?` / 낮음: ${basicLow}`:''}
+가장 높은 분야: ${d.interest?.hi||'미기재'} / 낮은 분야: ${d.interest?.lo||'미기재'}
+흥미 추천직업: ${d.interest?.jobs||'미기재'}
+저동기 플래그: ${isLowMotiv?'⚠️ 예 (전반적 점수 낮음)':'정상'}
+
+[진로발달]
+진로성숙도: ${d.career?.cm?.lv||'?'}(T${d.career?.cm?.t||'?'})
+진로결정수준: ${d.career?.cd?.lv||'?'}(${d.career?.cd?.sc||'?'})
+학생소감: ${d.career?.thought||'없음'}
+노력계획: ${d.career?.plan||'없음'}`;
+
+  // 저동기 학생은 별도 프롬프트
+  const lowMotivSection = isLowMotiv ? `
+⚠️ 이 학생은 흥미검사 점수가 전반적으로 낮습니다(T점수 평균 ${hoAvg}, 저수준 항목 ${lowLvCount}개).
+이는 검사 성실도 부족 또는 진로 탐색 동기 자체가 낮은 신호일 수 있습니다.
+다음을 반드시 반영하라:
+- 저동기 원인 가능성 3가지를 teacher 분석에 명시
+- 먼저 '마음 열기' 상담이 필요함을 강조
+- 직업 추천보다 동기 유발 전략 우선 제시
+- 학생용 리포트는 격려와 탐색 권유 중심으로 작성` : '';
 
   const prompt = `너는 한국 고등학교 진로상담 전문 AI다.
-아래 학생 검사 자료를 분석하여 반드시 아래 JSON 형식으로만 응답하라.
-응답 시작은 반드시 { 로 시작하고 } 로 끝나야 한다. 마크다운, 코드블록, 추가 설명 절대 금지.
-JSON 값(value)은 반드시 일반 텍스트 문자열로 작성하라. 값 안에 JSON 배열([])이나 객체({})를 절대 쓰지 말라.
+아래 학생의 4종 검사 자료를 심층 분석하여 반드시 아래 JSON 형식으로만 응답하라.
+응답은 반드시 { 로 시작하고 } 로 끝나야 한다. 마크다운, 코드블록, 추가 설명 절대 금지.
+JSON 값(value)은 반드시 텍스트 문자열이어야 한다. 값 안에 JSON 배열([])이나 객체({}) 절대 금지.
+${lowMotivSection}
+
+[핵심 분석 지침]
+1. 흥미코드 단독 해석 금지 - 반드시 적성+인성+진로발달을 교차하여 근거를 제시할 것
+2. 직업 추천은 반드시 "왜 이 직업인지 1줄 근거"를 함께 제시할 것 (예: "외향성+E형+언어력 높음 → 대인설득이 핵심인 역할에 적합")
+3. 분산 패턴(${dispersePattern})을 해석에 반영할 것
+4. 기초흥미 세부 항목(${basicTop})과 Holland 코드의 일치/불일치를 분석할 것
+5. 탐구활동은 단순 아이디어가 아닌 3단계 경로로 제시할 것
 
 [학생 자료]
 ${base}
 
-[응답 형식 - student/teacher/record 세 키의 값을 텍스트로 채워서 반환]
-{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지를 줄글로)\n\n【추천 진로 방향】\n(2~3가지를 줄글로)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어 3가지】\n1.(교과 연계형)\n2.(진로 연계형)\n3.(사회문제 연계형)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지를 줄글로)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
+[응답 JSON]
+{"student":"【💡 한줄 진단】\\n(흥미+적성+성격 3가지를 조합한 1문장 핵심 설명)\\n\\n【🎯 나의 강점 조합】\\n(단순 나열이 아닌, 강점들이 어떻게 시너지를 내는지 2~3문장)\\n\\n【🔭 추천 진로 방향 (근거 포함)】\\n(각 방향마다 왜 맞는지 근거 1줄 포함, 2~3가지)\\n\\n【📅 지금 당장 할 행동 3가지】\\n1.(구체적 행동)\\n2.(구체적 행동)\\n3.(구체적 행동)\\n\\n【🔬 탐구 경로 3단계】\\n1단계(교과 연계): ...\\n2단계(활동 확장): ...\\n3단계(진로 연결): ...","teacher":"【⚡ 담임 상담 요약카드 (5분용)】\\n핵심 유형: (3단어로 요약)\\n주목 포인트: (1문장)\\n상담 첫 질문: (1문장)\\n주의사항: ${isLowMotiv?'⚠️ 저동기 의심 - 동기 확인 선행 필요':'(있으면 기재)'}\\n\\n【🔍 패턴 분석 (조합 해석)】\\n흥미-적성 일치도: (일치하면 강점, 불일치하면 긴장점 명시)\\n분산 패턴(${dispersePattern}): (이 패턴이 갖는 상담 의미)\\n성격-진로 연관: (성실성·외향성이 희망 방향과 맞는지)\\n\\n【🎯 충돌/긴장 포인트】\\n(희망직업 vs 실제 검사 결과 간 불일치, 능력은 있는데 흥미가 낮거나 그 반대 등 상담 핵심 포인트)\\n\\n【💬 상담 질문 3개】\\n1.\\n2.\\n3.\\n\\n【📌 지도 전략】\\n(분산 패턴과 동기 수준에 맞는 구체적 전략 2~3가지)\\n\\n【📝 세특 작성 포인트】\\n(교과+활동+성장을 연결하는 핵심 1~2문장)","record":"【진로 세특 초안】\\n(교사 관찰 서술형, 400자 이내, 적성·흥미·인성·진로발달을 유기적으로 연결, '학생은'으로 시작 금지)\\n\\n【상담 메모】\\n(담임 전달용 핵심 1줄)"}`;
 
-  // 1차: 일반 프롬프트 시도
-  let raw;
-  raw = await callGemini(prompt, key);
+  let raw = await callGemini(prompt, key);
   try{
-    // JSON 블록 추출: { 로 시작하는 부분부터 마지막 } 까지
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     let cleaned = jsonMatch ? jsonMatch[0] : raw.replace(/```json|```/g,'').trim();
-    // Bad control character 방지: JSON 문자열 값 안의 제어문자를 이스케이프
-    // \n \t \r 등이 JSON 문자열 안에 리터럴로 들어오면 파싱 실패하므로 제거
     cleaned = cleaned.replace(/[\u0000-\u001F\u007F]/g, ch => {
       if(ch==='\n') return '\\n';
       if(ch==='\r') return '\\r';
       if(ch==='\t') return '\\t';
-      return ''; // 나머지 제어문자 제거
+      return '';
     });
     const parsed = JSON.parse(cleaned);
     if(parsed.student && parsed.teacher && parsed.record) return parsed;
-    // 일부 키만 있어도 허용 (빈 문자열은 placeholder로 채움)
     if(parsed.student || parsed.teacher || parsed.record){
       return {
         student: parsed.student || '(학생 리포트 생성 실패 - 재분석 필요)',
@@ -1040,13 +1132,13 @@ ${base}
         record:  parsed.record  || '(세특 초안 생성 실패 - 재분석 필요)'
       };
     }
-    throw new Error('JSON 키 누락 (student/teacher/record 없음)');
+    throw new Error('JSON 키 누락');
   }catch(err){
-    console.warn('JSON 파싱 실패:', err.message, '\n원본 응답:', raw.slice(0,200));
-    // 완전 실패 시 에러를 던져서 재시도 유도
+    console.warn('JSON 파싱 실패:', err.message, '\n원본:', raw.slice(0,200));
     throw new Error('AI 응답 파싱 실패 - 다시 시도해 주세요 (' + err.message + ')');
   }
 }
+
 
 async function callGemini(prompt, key){
   // 모델 우선순위: 2.5-flash(품질) → 2.5-flash-lite(폴백)
@@ -1186,11 +1278,26 @@ async function analyzeAll(){
   if(pending.length===0){ alert('분석할 학생이 없습니다 (모두 완료됨).'); return; }
   const label = selectedClass==='전체'?'전체':selectedClass;
   if(!confirm(`${label} 미완료 학생 ${pending.length}명 일괄 분석\n예상 시간: 약 ${Math.ceil(pending.length*0.7)}분`)) return;
+  await runBatchAnalysis(pending);
+}
+
+async function reAnalyzeAll(){
+  const c = cfg();
+  if(!c.apikey){ alert('Gemini API 키를 설정해 주세요.'); return; }
+  const scope = selectedClass==='전체' ? cachedSubs : cachedSubs.filter(s=>s.classNum===selectedClass);
+  if(scope.length===0){ alert('학생 데이터가 없습니다.'); return; }
+  const label = selectedClass==='전체'?'전체':selectedClass;
+  if(!confirm(`${label} 전체 ${scope.length}명을 모두 재분석합니다.\n기존 분석 결과가 덮어쓰입니다.\n예상 시간: 약 ${Math.ceil(scope.length*0.7)}분`)) return;
+  await runBatchAnalysis(scope);
+}
+
+async function runBatchAnalysis(targets){
+  const c = cfg();
   let ok=0, fail=0, failList=[];
-  for(let i=0;i<pending.length;i++){
-    const s = pending[i];
+  for(let i=0;i<targets.length;i++){
+    const s = targets[i];
     document.getElementById('t-empty').style.display='block';
-    document.getElementById('t-empty').textContent=`분석 중... ${i+1}/${pending.length} (${s.classNum} ${s.name})`;
+    document.getElementById('t-empty').textContent=`분석 중... ${i+1}/${targets.length} (${s.classNum} ${s.name})`;
     try{
       const ai = await callGeminiOnce(s, c.apikey);
       const res = await fetch(c.url,{method:'POST',
@@ -1204,7 +1311,7 @@ async function analyzeAll(){
       fail++;
       failList.push(`${s.name}(${err.message.slice(0,20)})`);
     }
-    if(i<pending.length-1) await new Promise(r=>setTimeout(r,2500));
+    if(i<targets.length-1) await new Promise(r=>setTimeout(r,2500));
   }
   document.getElementById('t-empty').style.display='none';
   updateStats(); renderTable();
