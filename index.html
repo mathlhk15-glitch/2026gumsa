@@ -1013,7 +1013,7 @@ JSON 값(value)은 반드시 일반 텍스트 문자열로 작성하라. 값 안
 ${base}
 
 [응답 형식 - student/teacher/record 세 키의 값을 텍스트로 채워서 반환]
-{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지를 줄글로)\n\n【추천 진로 방향】\n(2~3가지를 줄글로)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어】\n(1가지)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지를 줄글로)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
+{"student":"【한줄요약】\n(2문장)\n\n【핵심 강점】\n(2~3가지를 줄글로)\n\n【추천 진로 방향】\n(2~3가지를 줄글로)\n\n【지금 할 행동 3가지】\n1.\n2.\n3.\n\n【세특 탐구 아이디어 3가지】\n1.(교과 연계형)\n2.(진로 연계형)\n3.(사회문제 연계형)","teacher":"【핵심요약】\n(2문장)\n\n【검사 패턴 분석】\n(주요 특이사항)\n\n【진로 준비도 해석】\n(강점/보완점)\n\n【상담 질문 3개】\n1.\n2.\n3.\n\n【지도 전략】\n(2~3가지를 줄글로)\n\n【세특 작성 포인트】\n(핵심 1가지)","record":"【진로 세특 초안】\n(400자 이내의 자연스러운 서술문)\n\n【상담 메모】\n(한 줄 핵심 포인트)"}`;
 
   // 1차: 일반 프롬프트 시도
   let raw;
@@ -1245,12 +1245,22 @@ function buildStudentBlock(s){
   const dt = new Date(s.submittedAt).toLocaleDateString('ko-KR');
   const now = new Date().toLocaleDateString('ko-KR');
   const school = cfg().school || '창원경일고등학교';
+  const d = s.data||{};
+  const aptRows = (d.aptitude?.scores||[]).map(sc=>
+    `<tr><td>${sc.name}</td><td>${sc.score||'-'}</td><td>${sc.level||'-'}</td></tr>`).join('');
+  const hoRows = (d.interest?.types||[]).map(h=>
+    `<tr><td>${h.code}(${h.name})</td><td>${h.t||'-'}</td><td>${h.lv||'-'}</td></tr>`).join('');
   return `
     <div class="stu-block">
       <div class="ph">
         <div class="ph-t">📘 진로 AI 리포트 — 학생용</div>
         <div class="ph-m">학번: ${s.studentId} | 이름: ${s.name} | ${s.classNum||''}<br>제출일: ${dt} | 생성: ${now}</div>
       </div>
+      <div class="ps2"><div class="ps2-t">📐 적성검사 결과</div><div class="ps2-b"><table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#eef2f7"><th style="padding:3px 6px;text-align:left">요인</th><th style="padding:3px 6px">점수</th><th style="padding:3px 6px">수준</th></tr>${aptRows}</table><div style="margin-top:4px;font-size:10px">추천직업: ${(d.aptitude?.jobs||[]).join(', ')||'-'}</div></div></div>
+      <div class="ps2"><div class="ps2-t">🎯 흥미검사 (Holland) 결과</div><div class="ps2-b"><div style="font-size:10px;margin-bottom:4px">흥미코드: <strong>${d.interest?.code1||'-'} - ${d.interest?.code2||'-'}</strong></div><table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#eef2f7"><th style="padding:3px 6px;text-align:left">유형</th><th style="padding:3px 6px">T점수</th><th style="padding:3px 6px">수준</th></tr>${hoRows}</table></div></div>
+      <div class="ps2"><div class="ps2-t">🧠 인성검사 (Big5)</div><div class="ps2-b" style="font-size:10px">외향성: ${d.personality?.ext||'-'} | 친화성: ${d.personality?.agr||'-'} | 성실성: ${d.personality?.con||'-'} | 개방성: ${d.personality?.ope||'-'} | 정서안정: ${d.personality?.neu||'-'}<br>학교적응: ${d.personality?.sadp||'-'} | 급우관계: ${d.personality?.peer||'-'} | 학업수준: ${d.personality?.grade||'-'} | 좋아하는과목: ${d.personality?.fav||'-'}</div></div>
+      <div class="ps2"><div class="ps2-t">📈 진로발달검사</div><div class="ps2-b" style="font-size:10px">진로성숙도: ${d.career?.cm?.lv||'-'} (T=${d.career?.cm?.t||'-'}) | 진로결정: ${d.career?.cd?.lv||'-'} (${d.career?.cd?.sc||'-'}점)<br>희망직업: ${d.personality?.job||'-'} | 희망학과: ${d.personality?.dept||'-'}</div></div>
+      <hr>
       <div class="ps2"><div class="ps2-t">📘 나의 진로 리포트</div><div class="ps2-b">${s.aiAnalysis.student||''}</div></div>
       <div class="pf">본 리포트는 AI 분석 보조 도구로 생성되었습니다. | ${school} 진로진학상담실</div>
     </div>`;
@@ -1262,12 +1272,24 @@ function buildTeacherBlock(s){
   const dt = new Date(s.submittedAt).toLocaleDateString('ko-KR');
   const now = new Date().toLocaleDateString('ko-KR');
   const school = cfg().school || '창원경일고등학교';
+  const d = s.data||{};
+  const aptRows = (d.aptitude?.scores||[]).map(sc=>
+    `<tr><td>${sc.name}</td><td>${sc.score||'-'}</td><td>${sc.level||'-'}</td></tr>`).join('');
+  const hoRows = (d.interest?.types||[]).map(h=>
+    `<tr><td>${h.code}(${h.name})</td><td>${h.t||'-'}</td><td>${h.lv||'-'}</td></tr>`).join('');
+  const cmSubs = (d.career?.cm?.subs||[]).map(sb=>`${sb.name}: ${sb.sc||'-'}(${sb.lv||'-'})`).join(' | ')||'-';
+  const cdSubs = (d.career?.cd?.subs||[]).map(sb=>`${sb.name}: ${sb.sc||'-'}(${sb.lv||'-'})`).join(' | ')||'-';
   return `
     <div class="stu-block">
       <div class="ph">
         <div class="ph-t">📊 진로 AI 분석 리포트 — 교사용</div>
         <div class="ph-m">학번: ${s.studentId} | 이름: ${s.name} | ${s.classNum||''}<br>제출일: ${dt} | 생성: ${now}</div>
       </div>
+      <div class="ps2"><div class="ps2-t">📐 적성검사</div><div class="ps2-b"><table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#eef2f7"><th style="padding:3px 6px;text-align:left">요인</th><th style="padding:3px 6px">점수</th><th style="padding:3px 6px">수준</th></tr>${aptRows}</table><div style="margin-top:4px;font-size:10px">추천직업: ${(d.aptitude?.jobs||[]).join(', ')||'-'}</div></div></div>
+      <div class="ps2"><div class="ps2-t">🎯 흥미검사 (Holland)</div><div class="ps2-b"><div style="font-size:10px;margin-bottom:4px">흥미코드: <strong>${d.interest?.code1||'-'} - ${d.interest?.code2||'-'}</strong> | 상위흥미: ${d.interest?.hi||'-'} | 하위흥미: ${d.interest?.lo||'-'}</div><table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#eef2f7"><th style="padding:3px 6px;text-align:left">유형</th><th style="padding:3px 6px">T점수</th><th style="padding:3px 6px">수준</th></tr>${hoRows}</table></div></div>
+      <div class="ps2"><div class="ps2-t">🧠 인성검사 (Big5)</div><div class="ps2-b" style="font-size:10px">외향성: ${d.personality?.ext||'-'} | 친화성: ${d.personality?.agr||'-'} | 성실성: ${d.personality?.con||'-'} | 개방성: ${d.personality?.ope||'-'} | 정서안정: ${d.personality?.neu||'-'}<br>학교적응: ${d.personality?.sadp||'-'} | 급우관계: ${d.personality?.peer||'-'} | 학업수준: ${d.personality?.grade||'-'} | 좋아하는과목: ${d.personality?.fav||'-'} | 싫어하는과목: ${d.personality?.bad||'-'}</div></div>
+      <div class="ps2"><div class="ps2-t">📈 진로발달검사</div><div class="ps2-b" style="font-size:10px">진로성숙도: ${d.career?.cm?.lv||'-'} (T=${d.career?.cm?.t||'-'}) | 하위요인: ${cmSubs}<br>진로결정: ${d.career?.cd?.lv||'-'} (${d.career?.cd?.sc||'-'}점) | 하위요인: ${cdSubs}<br>희망직업: ${d.personality?.job||'-'} | 희망학과: ${d.personality?.dept||'-'}<br>학생소감: ${d.career?.thought||'-'} | 노력계획: ${d.career?.plan||'-'}</div></div>
+      <hr>
       <div class="ps2"><div class="ps2-t">📘 학생용 진로 리포트</div><div class="ps2-b">${s.aiAnalysis.student||''}</div></div>
       <hr>
       <div class="ps2"><div class="ps2-t">🏫 교사용 상담 분석</div><div class="ps2-b">${s.aiAnalysis.teacher||''}</div></div>
